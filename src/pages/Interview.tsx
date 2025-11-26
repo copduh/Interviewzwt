@@ -103,25 +103,33 @@ const Interview = () => {
 
       if (uploadError) throw uploadError;
 
-      // Simulate resume analysis (in production, this would call an AI service)
-      await new Promise(resolve => setTimeout(resolve, 3000));
-      
-      const mockScore = Math.floor(Math.random() * 30) + 70;
-      const mockFeedback = `Your resume shows strong alignment with the ${jobRole?.title} position. Key strengths include relevant technical skills and experience. Consider adding more quantifiable achievements and expanding on recent projects. Overall, you're a strong candidate for this role.`;
+      // Read file content
+      const fileText = await resumeFile.text();
+
+      // Analyze resume using Groq AI
+      const { data: analysisData, error: analysisError } = await supabase.functions.invoke('analyze-resume', {
+        body: {
+          resumeText: fileText,
+          jobDescription: jobRole?.description || '',
+          jobTitle: jobRole?.title || '',
+        }
+      });
+
+      if (analysisError) throw analysisError;
 
       // Update session with analysis results
       const { error: updateError } = await supabase
         .from("interview_sessions")
         .update({
-          resume_score: mockScore,
-          resume_feedback: mockFeedback,
+          resume_score: analysisData.score,
+          resume_feedback: analysisData.feedback,
           status: "resume_uploaded",
         })
         .eq("id", session.id);
 
       if (updateError) throw updateError;
 
-      setAnalysisResult({ score: mockScore, feedback: mockFeedback });
+      setAnalysisResult({ score: analysisData.score, feedback: analysisData.feedback });
       setStep("ready");
 
       toast({

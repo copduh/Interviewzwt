@@ -1,1 +1,14 @@
 project_id = "yeggovadspunfsnlquav"
+
+[api]
+enabled = true
+port = 54321
+schemas = ["public", "storage"]
+extra_search_path = ["public", "extensions"]
+max_rows = 1000
+
+[functions.analyze-resume]
+verify_jwt = false
+
+[functions.voice-interview]
+verify_jwt = false

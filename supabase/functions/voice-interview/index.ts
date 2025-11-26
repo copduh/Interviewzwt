@@ -19,9 +19,9 @@ serve(async (req) => {
     const { action, audioData, messages, jobDescription } = await req.json();
 
     const ASSEMBLYAI_API_KEY = Deno.env.get('ASSEMBLYAI_API_KEY');
-    const GROQ_API_KEY = Deno.env.get('GROQ_API_KEY');
+    const LOVABLE_API_KEY = Deno.env.get('LOVABLE_API_KEY');
 
-    if (!ASSEMBLYAI_API_KEY || !GROQ_API_KEY) {
+    if (!ASSEMBLYAI_API_KEY || !LOVABLE_API_KEY) {
       throw new Error('API keys not configured');
     }
 
@@ -86,7 +86,7 @@ serve(async (req) => {
       throw new Error('Transcription timeout');
     }
 
-    // Generate AI response using Groq
+    // Generate AI response using Lovable AI
     if (action === 'generate') {
       console.log('Generating AI response...');
 
@@ -100,14 +100,14 @@ Guidelines:
 - Keep responses concise (2-3 sentences)
 - Ask follow-up questions when appropriate`;
 
-      const response = await fetch('https://api.groq.com/openai/v1/chat/completions', {
+      const response = await fetch('https://ai.gateway.lovable.dev/v1/chat/completions', {
         method: 'POST',
         headers: {
-          'Authorization': `Bearer ${GROQ_API_KEY}`,
+          'Authorization': `Bearer ${LOVABLE_API_KEY}`,
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({
-          model: 'llama-3.3-70b-versatile',
+          model: 'google/gemini-2.5-flash',
           messages: [
             { role: 'system', content: systemPrompt },
             ...messages
@@ -119,8 +119,19 @@ Guidelines:
 
       if (!response.ok) {
         const error = await response.text();
-        console.error('Groq API error:', error);
-        throw new Error(`Groq API error: ${response.status}`);
+        console.error('Lovable AI error:', error);
+        
+        if (response.status === 429) {
+          return new Response(
+            JSON.stringify({ error: 'Rate limit exceeded. Please try again later.' }),
+            { 
+              status: 429, 
+              headers: { ...corsHeaders, 'Content-Type': 'application/json' } 
+            }
+          );
+        }
+        
+        throw new Error(`AI Gateway error: ${response.status}`);
       }
 
       const data = await response.json();

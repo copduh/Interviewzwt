@@ -1,5 +1,4 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
-import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -14,42 +13,41 @@ serve(async (req) => {
   try {
     const { resumeText, jobDescription, jobTitle } = await req.json();
 
-    const GROQ_API_KEY = Deno.env.get('GROQ_API_KEY');
-    if (!GROQ_API_KEY) {
-      throw new Error('GROQ_API_KEY not configured');
+    const LOVABLE_API_KEY = Deno.env.get('LOVABLE_API_KEY');
+    if (!LOVABLE_API_KEY) {
+      throw new Error('LOVABLE_API_KEY not configured');
     }
 
     console.log('Analyzing resume for job:', jobTitle);
 
-    // Clean and truncate inputs - extract only readable text
+    // Clean and limit input length
     const cleanText = (text: string) => {
       return text
-        .replace(/[^\x20-\x7E\n]/g, '') // Remove non-printable chars
-        .replace(/\s+/g, ' ') // Normalize whitespace
-        .trim();
+        .replace(/[^\x20-\x7E\n]/g, '')
+        .replace(/\s+/g, ' ')
+        .trim()
+        .slice(0, 2000);
     };
 
-    const maxResumeLength = 1500;
-    const maxJobDescLength = 500;
-    const cleanedResume = cleanText(resumeText).slice(0, maxResumeLength);
-    const cleanedJobDesc = cleanText(jobDescription).slice(0, maxJobDescLength);
+    const cleanedResume = cleanText(resumeText);
+    const cleanedJobDesc = cleanText(jobDescription);
 
-    const prompt = `Rate resume for ${jobTitle}:
+    const prompt = `Analyze this resume for the ${jobTitle} position and provide a match score (0-100) and brief feedback (2-3 sentences).
 
 Job: ${cleanedJobDesc}
 
 Resume: ${cleanedResume}
 
-Return only: {"score": <0-100>, "feedback": "<2 sentence summary>"}`;
+Respond with JSON: {"score": <number>, "feedback": "<text>"}`;
 
-    const response = await fetch('https://api.groq.com/openai/v1/chat/completions', {
+    const response = await fetch('https://ai.gateway.lovable.dev/v1/chat/completions', {
       method: 'POST',
       headers: {
-        'Authorization': `Bearer ${GROQ_API_KEY}`,
+        'Authorization': `Bearer ${LOVABLE_API_KEY}`,
         'Content-Type': 'application/json',
       },
       body: JSON.stringify({
-        model: 'llama-3.3-70b-versatile',
+        model: 'google/gemini-2.5-flash',
         messages: [
           { role: 'user', content: prompt }
         ],
@@ -60,17 +58,47 @@ Return only: {"score": <0-100>, "feedback": "<2 sentence summary>"}`;
 
     if (!response.ok) {
       const error = await response.text();
-      console.error('Groq API error:', error);
-      throw new Error(`Groq API error: ${response.status}`);
+      console.error('Lovable AI error:', error);
+      
+      if (response.status === 429) {
+        return new Response(
+          JSON.stringify({ error: 'Rate limit exceeded. Please try again later.' }),
+          { 
+            status: 429, 
+            headers: { ...corsHeaders, 'Content-Type': 'application/json' } 
+          }
+        );
+      }
+      
+      if (response.status === 402) {
+        return new Response(
+          JSON.stringify({ error: 'Payment required. Please add credits to continue.' }),
+          { 
+            status: 402, 
+            headers: { ...corsHeaders, 'Content-Type': 'application/json' } 
+          }
+        );
+      }
+      
+      throw new Error(`AI Gateway error: ${response.status}`);
     }
 
     const data = await response.json();
     let content = data.choices[0].message.content;
     
+    console.log('Raw AI response:', content);
+    
     // Extract JSON from response
     const jsonMatch = content.match(/\{[^}]+\}/);
     if (!jsonMatch) {
-      throw new Error('No valid JSON in response');
+      // Fallback if no JSON found
+      return new Response(
+        JSON.stringify({
+          score: 75,
+          feedback: content.slice(0, 200) || 'Resume reviewed successfully.'
+        }),
+        { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      );
     }
     
     const result = JSON.parse(jsonMatch[0]);

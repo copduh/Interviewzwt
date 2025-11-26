@@ -2,10 +2,10 @@ import { Toaster } from "@/components/ui/toaster";
 import { Toaster as Sonner } from "@/components/ui/sonner";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import { ErrorBoundary } from "@/components/ErrorBoundary";
 import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
 import { useEffect, useState } from "react";
-import { supabase } from "@/integrations/supabase/client";
-import type { User } from "@supabase/supabase-js";
+import apiClient from "@/integrations/api/client";
 
 import Index from "./pages/Index";
 import Auth from "./pages/Auth";
@@ -20,24 +20,28 @@ import NotFound from "./pages/NotFound";
 const queryClient = new QueryClient();
 
 const App = () => {
-  const [user, setUser] = useState<User | null>(null);
+  const [user, setUser] = useState<any | null>(null);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    // Check active session
-    supabase.auth.getSession().then(({ data: { session } }) => {
-      setUser(session?.user ?? null);
-      setLoading(false);
-    });
-
-    // Listen for auth changes
-    const {
-      data: { subscription },
-    } = supabase.auth.onAuthStateChange((_event, session) => {
-      setUser(session?.user ?? null);
-    });
-
-    return () => subscription.unsubscribe();
+    let mounted = true;
+    const check = async () => {
+      try {
+        const { user } = await apiClient.me();
+        if (mounted) setUser(user);
+      } catch (error) {
+        if (mounted) setUser(null);
+      } finally {
+        if (mounted) setLoading(false);
+      }
+    };
+    check();
+    const handleAuthChange = () => {
+      // Re-check current user when auth status changes
+      check();
+    };
+    window.addEventListener('auth-change', handleAuthChange);
+    return () => { mounted = false; };
   }, []);
 
   if (loading) {
@@ -50,6 +54,7 @@ const App = () => {
 
   return (
     <QueryClientProvider client={queryClient}>
+      <ErrorBoundary>
       <TooltipProvider>
         <Toaster />
         <Sonner />
@@ -67,6 +72,7 @@ const App = () => {
           </Routes>
         </BrowserRouter>
       </TooltipProvider>
+      </ErrorBoundary>
     </QueryClientProvider>
   );
 };

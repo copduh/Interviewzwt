@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { supabase } from "@/integrations/supabase/client";
+import apiClient, { setToken } from "@/integrations/api/client";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -23,41 +23,19 @@ const Auth = () => {
 
     try {
       if (isLogin) {
-        const { data, error } = await supabase.auth.signInWithPassword({
-          email,
-          password,
-        });
-
-        if (error) throw error;
-
-        if (data.user) {
-          toast({
-            title: "Welcome back!",
-            description: "You've successfully signed in.",
-          });
-          navigate("/dashboard");
-        }
+        const { token, user } = await apiClient.login(email, password);
+        setToken(token);
+        // Notify the app to re-check authentication status
+        window.dispatchEvent(new Event('auth-change'));
+        toast({ title: "Welcome back!", description: "You've successfully signed in." });
+        navigate('/dashboard');
       } else {
-        const { data, error } = await supabase.auth.signUp({
-          email,
-          password,
-          options: {
-            data: {
-              full_name: fullName,
-            },
-            emailRedirectTo: `${window.location.origin}/dashboard`,
-          },
-        });
-
-        if (error) throw error;
-
-        if (data.user) {
-          toast({
-            title: "Account created!",
-            description: "Welcome! You have 10 free interview credits.",
-          });
-          navigate("/dashboard");
-        }
+        const { token, user } = await apiClient.register(email, password, fullName);
+        setToken(token);
+        // Notify the app to re-check authentication status
+        window.dispatchEvent(new Event('auth-change'));
+        toast({ title: "Account created!", description: "Welcome! You have 10 free interview credits." });
+        navigate('/dashboard');
       }
     } catch (error: any) {
       toast({

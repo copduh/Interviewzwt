@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { supabase } from "@/integrations/supabase/client";
+import apiClient from "@/integrations/api/client";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -35,28 +35,14 @@ const CustomJob = () => {
     setLoading(true);
 
     try {
-      const { data: { user } } = await supabase.auth.getUser();
-      if (!user) throw new Error("Not authenticated");
-
-      const { data, error } = await supabase
-        .from("custom_job_descriptions")
-        .insert({
-          user_id: user.id,
-          title,
-          description,
-          requirements,
-        })
-        .select()
-        .single();
-
-      if (error) throw error;
+      const { job } = await apiClient.createCustomJob(title, description, requirements);
 
       toast({
         title: "Job description created!",
         description: "You can now start an interview for this role.",
       });
 
-      navigate(`/interview/${data.id}?custom=true`);
+      navigate(`/interview/${job._id}?custom=true`);
     } catch (error: any) {
       console.error("Error creating custom job:", error);
       toast({

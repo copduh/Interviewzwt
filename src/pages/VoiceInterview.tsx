@@ -1,6 +1,6 @@
 import { useEffect, useState, useRef } from "react";
 import { useNavigate, useParams } from "react-router-dom";
-import { supabase } from "@/integrations/supabase/client";
+import apiClient, { getToken } from "@/integrations/api/client";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -75,24 +75,18 @@ const VoiceInterview = () => {
   };
 
   const checkAuth = async () => {
-    const { data: { user } } = await supabase.auth.getUser();
-    if (!user) {
-      navigate("/auth");
+    try {
+      await apiClient.me();
+    } catch (error) {
+      navigate('/auth');
     }
   };
 
   const loadJobDescription = async () => {
     try {
-      const { data: session } = await supabase
-        .from('interview_sessions')
-        .select('job_role_id, custom_job_id, job_roles(description), custom_job_descriptions(description)')
-        .eq('id', sessionId)
-        .single();
-
+      const { session } = await apiClient.getSession(sessionId as string);
       if (session) {
-        const desc = session.job_role_id 
-          ? (session.job_roles as any)?.description 
-          : (session.custom_job_descriptions as any)?.description;
+        const desc = session.jobRoleId ? session.jobRoleId.description : session.customJobId?.description;
         setJobDescription(desc || '');
       }
     } catch (error) {
@@ -107,21 +101,10 @@ const VoiceInterview = () => {
     
     // Get initial greeting from AI
     try {
-      const { data, error } = await supabase.functions.invoke('voice-interview', {
-        body: {
-          action: 'generate',
-          messages: [
-            { role: 'user', content: 'Start the interview with a greeting and first question.' }
-          ],
-          jobDescription,
-        }
-      });
-
-      if (error) throw error;
-
-      setMessages([{ role: 'assistant', content: data.message }]);
+      const { message } = await apiClient.voiceInterview({ action: 'generate', messages: [{ role: 'user', content: 'Start the interview with a greeting and first question.' }], jobDescription });
+      setMessages([{ role: 'assistant', content: message }]);
       setQuestionCount(1);
-      speakText(data.message);
+      speakText(message);
     } catch (error: any) {
       console.error('Error starting interview:', error);
       toast({
@@ -190,35 +173,18 @@ const VoiceInterview = () => {
       const base64Audio = (reader.result as string).split(',')[1];
 
       // Transcribe audio
-      const { data: transcriptData, error: transcriptError } = await supabase.functions.invoke('voice-interview', {
-        body: {
-          action: 'transcribe',
-          audioData: base64Audio,
-        }
-      });
-
-      if (transcriptError) throw transcriptError;
-
-      const userMessage = transcriptData.transcript;
+      const { transcript } = await apiClient.voiceInterview({ action: 'transcribe', audioData: base64Audio });
+      const userMessage = transcript;
       setMessages(prev => [...prev, { role: 'user', content: userMessage }]);
 
       // Generate AI response
       setIsAISpeaking(true);
       const conversationHistory = [...messages, { role: 'user', content: userMessage }];
 
-      const { data: responseData, error: responseError } = await supabase.functions.invoke('voice-interview', {
-        body: {
-          action: 'generate',
-          messages: conversationHistory,
-          jobDescription,
-        }
-      });
-
-      if (responseError) throw responseError;
-
-      setMessages(prev => [...prev, { role: 'assistant', content: responseData.message }]);
+      const { message } = await apiClient.voiceInterview({ action: 'generate', messages: conversationHistory, jobDescription });
+      setMessages(prev => [...prev, { role: 'assistant', content: message }]);
       setQuestionCount(prev => prev + 1);
-      speakText(responseData.message);
+      speakText(message);
 
     } catch (error: any) {
       console.error('Error processing answer:', error);
@@ -239,48 +205,22 @@ const VoiceInterview = () => {
     setIsAISpeaking(false);
     
     try {
-      const { data: { user } } = await supabase.auth.getUser();
-      if (!user) throw new Error("Not authenticated");
+      const { user } = await apiClient.me();
+      if (!user) throw new Error('Not authenticated');
 
       // Generate final feedback based on conversation
       const conversationText = messages.map(m => `${m.role}: ${m.content}`).join('\n');
-      
-      const { data: feedbackData } = await supabase.functions.invoke('analyze-resume', {
-        body: {
-          resumeText: conversationText,
-          jobDescription,
-          jobTitle: 'Interview Performance',
-        }
-      });
+      const { score, feedback } = await apiClient.analyzeResume({ resumeText: conversationText, jobDescription, jobTitle: 'Interview Performance' });
 
-      const score = feedbackData?.score || Math.floor(Math.random() * 20) + 75;
-      const feedback = feedbackData?.feedback || 'Great job on your interview! You demonstrated strong communication skills.';
+      const finalScore = score || Math.floor(Math.random() * 20) + 75;
+      const finalFeedback = feedback || 'Great job on your interview! You demonstrated strong communication skills.';
 
-      const { error } = await supabase
-        .from("interview_sessions")
-        .update({
-          status: "completed",
-          interview_score: score,
-          interview_feedback: feedback,
-          transcript: conversationText,
-          completed_at: new Date().toISOString(),
-        })
-        .eq("id", sessionId);
-
-      if (error) throw error;
+      await apiClient.updateSession(sessionId as string, { status: 'completed', interview_score: finalScore, interview_feedback: finalFeedback, transcript: conversationText, completed_at: new Date().toISOString() });
 
       // Deduct credit
-      const { data: profile } = await supabase
-        .from("profiles")
-        .select("credits")
-        .eq("id", user.id)
-        .single();
-
+      const { user: profile } = await apiClient.getProfile();
       if (profile && profile.credits > 0) {
-        await supabase
-          .from("profiles")
-          .update({ credits: profile.credits - 1 })
-          .eq("id", user.id);
+        await apiClient.updateCredits(profile.credits - 1);
       }
 
       toast({
@@ -388,11 +328,11 @@ const VoiceInterview = () => {
                 {messages.map((message, idx) => (
                   <div
                     key={idx}
-                    className={`flex ${message.role === "ai" ? "justify-start" : "justify-end"}`}
+                    className={`flex ${(message.role === "ai" || message.role === 'assistant') ? "justify-start" : "justify-end"}`}
                   >
                     <div
                       className={`max-w-[80%] p-4 rounded-lg ${
-                        message.role === "ai"
+                        (message.role === "ai" || message.role === 'assistant')
                           ? "bg-secondary text-secondary-foreground"
                           : "bg-primary text-primary-foreground"
                       }`}

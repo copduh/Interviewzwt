@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
-import { supabase } from "@/integrations/supabase/client";
+import apiClient from "@/integrations/api/client";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Progress } from "@/components/ui/progress";
@@ -31,25 +31,9 @@ const Feedback = () => {
 
   const fetchSession = async () => {
     try {
-      const { data: { user } } = await supabase.auth.getUser();
-      if (!user) {
-        navigate("/auth");
-        return;
-      }
-
-      const { data, error } = await supabase
-        .from("interview_sessions")
-        .select(`
-          *,
-          job_roles (
-            title
-          )
-        `)
-        .eq("id", sessionId)
-        .single();
-
-      if (error) throw error;
-      setSession(data);
+      await apiClient.me();
+      const { session } = await apiClient.getSession(sessionId as string);
+      setSession(session);
     } catch (error: any) {
       console.error("Error fetching session:", error);
       toast({

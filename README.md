@@ -71,3 +71,25 @@ Yes, you can!
 To connect a domain, navigate to Project > Settings > Domains and click Connect Domain.
 
 Read more here: [Setting up a custom domain](https://docs.lovable.dev/features/custom-domain#custom-domain)
+
+---
+
+## Migrated to MERN
+
+This project was migrated from Supabase to a MERN (MongoDB, Express, React, Node) stack. Key changes:
+
+- A new backend server is available under `server/` which provides REST endpoints to replace Supabase functionality.
+- Server endpoints implement auth (JWT), sessions, profile, file uploads, and AI-driven functions (analyze-resume, voice-interview).
+- Frontend now uses `src/integrations/api/client.ts` to call the new backend instead of the Supabase client.
+
+Run backend server:
+
+```bash
+cd server
+npm i
+cp .env.example .env # set MONGODB_URI, JWT_SECRET, GROQ_API_KEY, ASSEMBLYAI_API_KEY
+npm run dev
+```
+
+Update frontend to use the server: add `VITE_API_URL=http://localhost:4000` to your root `.env`.
+

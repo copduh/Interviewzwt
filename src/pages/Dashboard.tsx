@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { supabase } from "@/integrations/supabase/client";
+import apiClient, { setToken } from "@/integrations/api/client";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -35,48 +35,32 @@ const Dashboard = () => {
   }, []);
 
   const checkUser = async () => {
-    const { data: { user } } = await supabase.auth.getUser();
-    
-    if (!user) {
-      navigate("/auth");
-      return;
+    try {
+      const { user } = await apiClient.getProfile();
+      if (!user) {
+        navigate('/auth');
+        return;
+      }
+      setProfile({ credits: user.credits, full_name: user.fullName, email: user.email });
+    } catch (error) {
+      navigate('/auth');
+    } finally {
+      setLoading(false);
     }
-
-    const { data, error } = await supabase
-      .from("profiles")
-      .select("*")
-      .eq("id", user.id)
-      .single();
-
-    if (error) {
-      console.error("Error fetching profile:", error);
-      toast({
-        title: "Error",
-        description: "Failed to load profile data",
-        variant: "destructive",
-      });
-    } else {
-      setProfile(data);
-    }
-    setLoading(false);
   };
 
   const fetchJobRoles = async () => {
-    const { data, error } = await supabase
-      .from("job_roles")
-      .select("*")
-      .order("category");
-
-    if (error) {
-      console.error("Error fetching job roles:", error);
-    } else {
-      setJobRoles(data || []);
+    try {
+      const { jobRoles } = await apiClient.listJobRoles();
+      setJobRoles(jobRoles || []);
+    } catch (error) {
+      console.error('Error fetching job roles:', error);
     }
   };
 
   const handleLogout = async () => {
-    await supabase.auth.signOut();
-    navigate("/auth");
+    setToken(null);
+    navigate('/auth');
   };
 
   const startInterview = (jobRoleId: string) => {

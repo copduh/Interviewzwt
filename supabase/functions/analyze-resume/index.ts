@@ -13,9 +13,10 @@ serve(async (req) => {
   try {
     const { resumeText, jobDescription, jobTitle } = await req.json();
 
-    const LOVABLE_API_KEY = Deno.env.get('LOVABLE_API_KEY');
-    if (!LOVABLE_API_KEY) {
-      throw new Error('LOVABLE_API_KEY not configured');
+    const GROQ_API_KEY = Deno.env.get('GROQ_API_KEY');
+    const GROQ_MODEL = Deno.env.get('GROQ_MODEL') || 'groq-1.0-mini';
+    if (!GROQ_API_KEY) {
+      throw new Error('GROQ_API_KEY not configured');
     }
 
     console.log('Analyzing resume for job:', jobTitle);
@@ -40,25 +41,23 @@ Resume: ${cleanedResume}
 
 Respond with JSON: {"score": <number>, "feedback": "<text>"}`;
 
-    const response = await fetch('https://ai.gateway.lovable.dev/v1/chat/completions', {
+    const response = await fetch('https://api.groq.ai/v1/completions', {
       method: 'POST',
       headers: {
-        'Authorization': `Bearer ${LOVABLE_API_KEY}`,
+        'Authorization': `Bearer ${GROQ_API_KEY}`,
         'Content-Type': 'application/json',
       },
       body: JSON.stringify({
-        model: 'google/gemini-2.5-flash',
-        messages: [
-          { role: 'user', content: prompt }
-        ],
+        model: GROQ_MODEL,
+        input: prompt,
         temperature: 0.3,
-        max_tokens: 300
+        max_output_tokens: 300
       }),
     });
 
     if (!response.ok) {
       const error = await response.text();
-      console.error('Lovable AI error:', error);
+      console.error('Groq AI error:', error);
       
       if (response.status === 429) {
         return new Response(
@@ -84,7 +83,14 @@ Respond with JSON: {"score": <number>, "feedback": "<text>"}`;
     }
 
     const data = await response.json();
-    let content = data.choices[0].message.content;
+    let content = '';
+    if (data.output && data.output[0]) {
+      const out = data.output[0];
+      if (typeof out === 'string') content = out;
+      else if (out.text) content = out.text;
+      else if (Array.isArray(out.content) && out.content[0] && out.content[0].text) content = out.content[0].text;
+    }
+    if (!content) content = data.choices?.[0]?.message?.content || data.choices?.[0]?.text || data.result || '';
     
     console.log('Raw AI response:', content);
     

@@ -19,9 +19,10 @@ serve(async (req) => {
     const { action, audioData, messages, jobDescription } = await req.json();
 
     const ASSEMBLYAI_API_KEY = Deno.env.get('ASSEMBLYAI_API_KEY');
-    const LOVABLE_API_KEY = Deno.env.get('LOVABLE_API_KEY');
+    const GROQ_API_KEY = Deno.env.get('GROQ_API_KEY');
+    const GROQ_MODEL = Deno.env.get('GROQ_MODEL') || 'groq-1.0-mini';
 
-    if (!ASSEMBLYAI_API_KEY || !LOVABLE_API_KEY) {
+    if (!ASSEMBLYAI_API_KEY || !GROQ_API_KEY) {
       throw new Error('API keys not configured');
     }
 
@@ -86,7 +87,7 @@ serve(async (req) => {
       throw new Error('Transcription timeout');
     }
 
-    // Generate AI response using Lovable AI
+    // Generate AI response using Groq AI
     if (action === 'generate') {
       console.log('Generating AI response...');
 
@@ -100,26 +101,19 @@ Guidelines:
 - Keep responses concise (2-3 sentences)
 - Ask follow-up questions when appropriate`;
 
-      const response = await fetch('https://ai.gateway.lovable.dev/v1/chat/completions', {
+      const conversationText = [systemPrompt, ...messages.map((m: Message) => `${m.role}: ${m.content}`)].join('\n');
+      const response = await fetch('https://api.groq.ai/v1/completions', {
         method: 'POST',
         headers: {
-          'Authorization': `Bearer ${LOVABLE_API_KEY}`,
+          'Authorization': `Bearer ${GROQ_API_KEY}`,
           'Content-Type': 'application/json',
         },
-        body: JSON.stringify({
-          model: 'google/gemini-2.5-flash',
-          messages: [
-            { role: 'system', content: systemPrompt },
-            ...messages
-          ],
-          temperature: 0.8,
-          max_tokens: 200,
-        }),
+        body: JSON.stringify({ model: GROQ_MODEL, input: conversationText, temperature: 0.8, max_output_tokens: 200 }),
       });
 
       if (!response.ok) {
         const error = await response.text();
-        console.error('Lovable AI error:', error);
+        console.error('Groq AI error:', error);
         
         if (response.status === 429) {
           return new Response(
@@ -135,7 +129,14 @@ Guidelines:
       }
 
       const data = await response.json();
-      const aiMessage = data.choices[0].message.content;
+      let aiMessage = '';
+      if (data.output && data.output[0]) {
+        const out = data.output[0];
+        if (typeof out === 'string') aiMessage = out;
+        else if ((out as any).text) aiMessage = (out as any).text;
+        else if (Array.isArray((out as any).content) && (out as any).content[0] && (out as any).content[0].text) aiMessage = (out as any).content[0].text;
+      }
+      if (!aiMessage) aiMessage = data.choices?.[0]?.message?.content || data.choices?.[0]?.text || data.result || '';
 
       console.log('AI response generated');
 

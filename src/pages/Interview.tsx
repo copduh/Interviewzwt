@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
-import { supabase } from "@/integrations/supabase/client";
+import apiClient, { getToken } from "@/integrations/api/client";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -36,28 +36,20 @@ const Interview = () => {
   }, [jobRoleId]);
 
   const checkAuth = async () => {
-    const { data: { user } } = await supabase.auth.getUser();
-    if (!user) {
-      navigate("/auth");
+    try {
+      await apiClient.me();
+    } catch (error) {
+      navigate('/auth');
     }
   };
 
   const fetchJobRole = async () => {
-    const { data, error } = await supabase
-      .from("job_roles")
-      .select("*")
-      .eq("id", jobRoleId)
-      .single();
-
-    if (error) {
-      console.error("Error fetching job role:", error);
-      toast({
-        title: "Error",
-        description: "Failed to load job role",
-        variant: "destructive",
-      });
-    } else {
-      setJobRole(data);
+    try {
+      const { jobRole } = await apiClient.fetchJobRole(jobRoleId as string);
+      setJobRole(jobRole);
+    } catch (error: any) {
+      console.error('Error fetching job role:', error.message || error);
+      toast({ title: 'Error', description: 'Failed to load job role', variant: 'destructive' });
     }
   };
 
@@ -76,93 +68,50 @@ const Interview = () => {
 
   const analyzeResume = async () => {
     if (!resumeFile) return;
-
-    setStep("analyzing");
-
+    setStep('analyzing');
     try {
-      const { data: { user } } = await supabase.auth.getUser();
-      if (!user) throw new Error("Not authenticated");
+      // ensure user is authenticated
+      await apiClient.me();
 
-      // Create interview session
-      const { data: session, error: sessionError } = await supabase
-        .from("interview_sessions")
-        .insert({
-          user_id: user.id,
-          job_role_id: jobRoleId,
-          status: "pending",
-        })
-        .select()
-        .single();
-
-      if (sessionError) throw sessionError;
+      // create interview session
+      const { session } = await apiClient.createSession(jobRoleId as string);
       setSessionId(session.id);
 
-      // Upload resume to storage
-      const filePath = `${user.id}/${session.id}/${resumeFile.name}`;
-      const { error: uploadError } = await supabase.storage
-        .from("resumes")
-        .upload(filePath, resumeFile);
+      // upload resume to server
+      const token = getToken();
+      const formData = new FormData();
+      formData.append('file', resumeFile as File);
+      formData.append('sessionId', session.id);
+      const uploadResp = await fetch(`${import.meta.env.VITE_API_URL || 'http://localhost:4000'}/api/upload`, {
+        method: 'POST',
+        body: formData,
+        headers: token ? { Authorization: `Bearer ${token}` } : undefined,
+      });
+      if (!uploadResp.ok) throw new Error('Upload failed');
+      const { filePath } = await uploadResp.json();
 
-      if (uploadError) throw uploadError;
-
-      // Extract text from PDF
+      // Extract text from PDF or file
       let fileText = '';
-      if (resumeFile.type === 'application/pdf') {
-        fileText = await extractTextFromPDF(resumeFile);
+      if ((resumeFile as File).type === 'application/pdf') {
+        fileText = await extractTextFromPDF(resumeFile as File);
       } else {
         fileText = await resumeFile.text();
       }
 
-      // Analyze resume using Groq AI
-      const { data: analysisData, error: analysisError } = await supabase.functions.invoke('analyze-resume', {
-        body: {
-          resumeText: fileText,
-          jobDescription: jobRole?.description || '',
-          jobTitle: jobRole?.title || '',
-        }
-      });
+      // analyze using server function
+      const { score, feedback } = await apiClient.analyzeResume({ resumeText: fileText, jobDescription: jobRole?.description || '', jobTitle: jobRole?.title || '' });
 
-      if (analysisError) {
-        // Analysis failed but allow continuing
-        setAnalysisError(analysisError.message);
-        setStep("error");
-        
-        // Update session without scores
-        await supabase
-          .from("interview_sessions")
-          .update({ status: "resume_uploaded" })
-          .eq("id", session.id);
-        
-        return;
-      }
+      // update session
+      await apiClient.updateSession(session.id, { resume_score: score, resume_feedback: feedback, status: 'resume_uploaded', resumePath: filePath });
 
-      // Update session with analysis results
-      const { error: updateError } = await supabase
-        .from("interview_sessions")
-        .update({
-          resume_score: analysisData.score,
-          resume_feedback: analysisData.feedback,
-          status: "resume_uploaded",
-        })
-        .eq("id", session.id);
-
-      if (updateError) throw updateError;
-
-      setAnalysisResult({ score: analysisData.score, feedback: analysisData.feedback });
-      setStep("ready");
-
-      toast({
-        title: "Resume analyzed!",
-        description: "Your resume has been successfully analyzed.",
-      });
+      setAnalysisResult({ score, feedback });
+      setStep('ready');
+      toast({ title: 'Resume analyzed!', description: 'Your resume has been successfully analyzed.' });
     } catch (error: any) {
-      console.error("Error analyzing resume:", error);
-      setAnalysisError(error.message);
-      setStep("error");
-      toast({
-        title: "Error",
-        description: "Analysis failed, but you can still continue to the interview",
-      });
+      console.error('Error analyzing resume:', error);
+      setAnalysisError(error.message || 'Analysis failed');
+      setStep('error');
+      toast({ title: 'Error', description: 'Analysis failed, but you can still continue to the interview' });
     }
   };
 
@@ -269,22 +218,12 @@ const Interview = () => {
                 </Button>
                 <Button
                   onClick={async () => {
-                    const { data: { user } } = await supabase.auth.getUser();
-                    if (!user) return;
-                    
-                    const { data: session } = await supabase
-                      .from("interview_sessions")
-                      .insert({
-                        user_id: user.id,
-                        job_role_id: jobRoleId,
-                        status: "pending",
-                      })
-                      .select()
-                      .single();
-                    
-                    if (session) {
+                    try {
+                      const { session } = await apiClient.createSession(jobRoleId as string);
                       setSessionId(session.id);
                       navigate(`/voice-interview/${session.id}`);
+                    } catch (error) {
+                      toast({ title: 'Error', description: 'Could not create session', variant: 'destructive' });
                     }
                   }}
                   variant="outline"

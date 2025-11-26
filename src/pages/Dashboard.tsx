@@ -32,6 +32,13 @@ const Dashboard = () => {
   useEffect(() => {
     checkUser();
     fetchJobRoles();
+    
+    // Re-fetch profile when auth status changes (e.g., after payment capture)
+    const handleAuthChange = () => {
+      checkUser();
+    };
+    window.addEventListener('auth-change', handleAuthChange);
+    return () => window.removeEventListener('auth-change', handleAuthChange);
   }, []);
 
   const checkUser = async () => {

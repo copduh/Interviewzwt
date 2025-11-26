@@ -21,19 +21,26 @@ serve(async (req) => {
 
     console.log('Analyzing resume for job:', jobTitle);
 
-    // Truncate inputs to prevent token limit issues
-    const maxResumeLength = 3000;
-    const maxJobDescLength = 1000;
-    const truncatedResume = resumeText.slice(0, maxResumeLength);
-    const truncatedJobDesc = jobDescription.slice(0, maxJobDescLength);
+    // Clean and truncate inputs - extract only readable text
+    const cleanText = (text: string) => {
+      return text
+        .replace(/[^\x20-\x7E\n]/g, '') // Remove non-printable chars
+        .replace(/\s+/g, ' ') // Normalize whitespace
+        .trim();
+    };
 
-    const prompt = `Analyze this resume for the ${jobTitle} position.
+    const maxResumeLength = 1500;
+    const maxJobDescLength = 500;
+    const cleanedResume = cleanText(resumeText).slice(0, maxResumeLength);
+    const cleanedJobDesc = cleanText(jobDescription).slice(0, maxJobDescLength);
 
-Job Description: ${truncatedJobDesc}
+    const prompt = `Rate resume for ${jobTitle}:
 
-Resume: ${truncatedResume}
+Job: ${cleanedJobDesc}
 
-Provide JSON with: {"score": 0-100, "feedback": "brief analysis with key strengths and improvements"}`;
+Resume: ${cleanedResume}
+
+Return only: {"score": <0-100>, "feedback": "<2 sentence summary>"}`;
 
     const response = await fetch('https://api.groq.com/openai/v1/chat/completions', {
       method: 'POST',
@@ -44,12 +51,10 @@ Provide JSON with: {"score": 0-100, "feedback": "brief analysis with key strengt
       body: JSON.stringify({
         model: 'llama-3.3-70b-versatile',
         messages: [
-          { role: 'system', content: 'You are an expert resume analyzer. Always respond with valid JSON.' },
           { role: 'user', content: prompt }
         ],
-        temperature: 0.7,
-        max_tokens: 1000,
-        response_format: { type: "json_object" }
+        temperature: 0.3,
+        max_tokens: 300
       }),
     });
 
@@ -60,9 +65,15 @@ Provide JSON with: {"score": 0-100, "feedback": "brief analysis with key strengt
     }
 
     const data = await response.json();
-    const content = data.choices[0].message.content;
-    const result = JSON.parse(content);
-
+    let content = data.choices[0].message.content;
+    
+    // Extract JSON from response
+    const jsonMatch = content.match(/\{[^}]+\}/);
+    if (!jsonMatch) {
+      throw new Error('No valid JSON in response');
+    }
+    
+    const result = JSON.parse(jsonMatch[0]);
     console.log('Analysis complete. Score:', result.score);
 
     return new Response(

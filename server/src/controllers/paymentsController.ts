@@ -1,6 +1,7 @@
 import { Request, Response } from 'express';
 import axios from 'axios';
 import User from '../models/User';
+import PaymentOrder from '../models/PaymentOrder';
 
 const getPayPalBase = () => {
   const mode = process.env.PAYPAL_MODE || 'sandbox';
@@ -48,6 +49,14 @@ export const createOrder = async (req: any, res: Response) => {
 
     const data = resp.data;
     const approveLink = data.links?.find((l: any) => l.rel === 'approve')?.href;
+    // Persist mapping so capture can credit user even if auth is lost during redirect
+    try {
+      if (req.user && data.id) {
+        await PaymentOrder.create({ orderId: data.id, userId: req.user._id, credits });
+      }
+    } catch (e) {
+      console.warn('Failed to persist payment order mapping:', e);
+    }
     res.json({ orderID: data.id, approveUrl: approveLink });
   } catch (error: any) {
     console.error('Error creating PayPal order:', error.message || error.response?.data || error);
@@ -68,9 +77,23 @@ export const captureOrder = async (req: any, res: Response) => {
     const pu = data.purchase_units && data.purchase_units[0];
     const credits = pu?.custom_id ? Number(pu.custom_id) : 0;
 
+    let creditedUser = null;
+
+    // Prefer authenticated user
     if (credits > 0 && req.user) {
-      const user = await User.findByIdAndUpdate(req.user._id, { $inc: { credits } }, { new: true });
-      return res.json({ captured: true, order: data, user: { id: user._id, credits: user.credits } });
+      creditedUser = await User.findByIdAndUpdate(req.user._id, { $inc: { credits } }, { new: true });
+    } else if (credits > 0) {
+      // Try to resolve from persisted PaymentOrder mapping
+      const mapping = await PaymentOrder.findOne({ orderId });
+      if (mapping) {
+        creditedUser = await User.findByIdAndUpdate(mapping.userId, { $inc: { credits: mapping.credits || credits } }, { new: true });
+        // cleanup mapping
+        await PaymentOrder.deleteOne({ orderId });
+      }
+    }
+
+    if (creditedUser) {
+      return res.json({ captured: true, order: data, user: { id: creditedUser._id, credits: creditedUser.credits } });
     }
 
     res.json({ captured: true, order: data });

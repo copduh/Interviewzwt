@@ -4,9 +4,8 @@ import authMiddleware from '../middleware/auth';
 
 const router = Router();
 
-router.use(authMiddleware);
-router.post('/', createSession);
-router.get('/:id', getSession);
-router.patch('/:id', updateSession);
+router.post('/', authMiddleware, createSession);
+router.get('/:id', authMiddleware, getSession);
+router.patch('/:id', authMiddleware, updateSession);
 
 export default router;

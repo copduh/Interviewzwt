@@ -42,7 +42,7 @@ const CustomJob = () => {
         description: "You can now start an interview for this role.",
       });
 
-      navigate(`/interview/${job._id}?custom=true`);
+      navigate(`/interview/${job.id || job._id}?custom=true`);
     } catch (error: any) {
       console.error("Error creating custom job:", error);
       toast({

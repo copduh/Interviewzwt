@@ -208,12 +208,31 @@ const VoiceInterview = () => {
       const { user } = await apiClient.me();
       if (!user) throw new Error('Not authenticated');
 
-      // Generate final feedback based on conversation
+      // Generate final feedback based on conversation using scoreInterview
       const conversationText = messages.map(m => `${m.role}: ${m.content}`).join('\n');
-      const { score, feedback } = await apiClient.analyzeResume({ resumeText: conversationText, jobDescription, jobTitle: 'Interview Performance' });
+      
+      if (!conversationText || conversationText.trim().length === 0) {
+        throw new Error('No conversation to score');
+      }
 
-      const finalScore = score || Math.floor(Math.random() * 20) + 75;
-      const finalFeedback = feedback || 'Great job on your interview! You demonstrated strong communication skills.';
+      console.log('Scoring interview with conversation:', conversationText.substring(0, 100) + '...');
+      
+      let finalScore = 50;
+      let finalFeedback = 'Interview completed. Unable to generate feedback at this time.';
+
+      try {
+        const scoreData = await apiClient.scoreInterview({ conversationText, jobDescription });
+        finalScore = scoreData.score || 50;
+        finalFeedback = scoreData.feedback || 'Interview completed successfully.';
+        console.log('Interview scored:', { score: finalScore, feedback: finalFeedback });
+      } catch (scoreError: any) {
+        console.error('Error scoring interview:', scoreError);
+        toast({
+          title: "Warning",
+          description: "Could not score interview response, using default score.",
+          variant: "default",
+        });
+      }
 
       await apiClient.updateSession(sessionId as string, { status: 'completed', interview_score: finalScore, interview_feedback: finalFeedback, transcript: conversationText, completed_at: new Date().toISOString() });
 

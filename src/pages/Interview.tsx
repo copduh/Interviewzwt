@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { useNavigate, useParams } from "react-router-dom";
+import { useNavigate, useParams, useLocation } from "react-router-dom";
 import apiClient, { getToken } from "@/integrations/api/client";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -30,10 +30,13 @@ const Interview = () => {
   const navigate = useNavigate();
   const { toast } = useToast();
 
+  const location = useLocation();
+  const isCustom = new URLSearchParams(location.search).get('custom') === 'true';
+
   useEffect(() => {
     checkAuth();
     fetchJobRole();
-  }, [jobRoleId]);
+  }, [jobRoleId, isCustom]);
 
   const checkAuth = async () => {
     try {
@@ -45,8 +48,19 @@ const Interview = () => {
 
   const fetchJobRole = async () => {
     try {
-      const { jobRole } = await apiClient.fetchJobRole(jobRoleId as string);
-      setJobRole(jobRole);
+      if (isCustom) {
+        // Fetch custom job description
+        const { job } = await apiClient.fetchCustomJob(jobRoleId as string);
+        setJobRole({
+          title: job.title,
+          description: job.description,
+          requirements: job.requirements || [],
+          skills: []
+        });
+      } else {
+        const { jobRole } = await apiClient.fetchJobRole(jobRoleId as string);
+        setJobRole(jobRole);
+      }
     } catch (error: any) {
       console.error('Error fetching job role:', error.message || error);
       toast({ title: 'Error', description: 'Failed to load job role', variant: 'destructive' });
@@ -74,7 +88,7 @@ const Interview = () => {
       await apiClient.me();
 
       // create interview session
-      const { session } = await apiClient.createSession(jobRoleId as string);
+      const { session } = await apiClient.createSession(isCustom ? undefined : (jobRoleId as string), isCustom ? (jobRoleId as string) : undefined);
       setSessionId(session.id);
 
       // upload resume to server
@@ -87,16 +101,29 @@ const Interview = () => {
         body: formData,
         headers: token ? { Authorization: `Bearer ${token}` } : undefined,
       });
-      if (!uploadResp.ok) throw new Error('Upload failed');
-      const { filePath } = await uploadResp.json();
-
-      // Extract text from PDF or file
-      let fileText = '';
-      if ((resumeFile as File).type === 'application/pdf') {
-        fileText = await extractTextFromPDF(resumeFile as File);
-      } else {
-        fileText = await resumeFile.text();
+      if (!uploadResp.ok) {
+        const errData = await uploadResp.json();
+        throw new Error(errData.message || 'Upload failed');
       }
+      const uploadData = await uploadResp.json();
+      const { filePath, extractedText } = uploadData;
+
+      // Use server-extracted text, fallback to client extraction if not provided
+      let fileText = extractedText;
+      if (!fileText) {
+        console.log('Server did not extract text, attempting client-side extraction...');
+        if ((resumeFile as File).type === 'application/pdf') {
+          fileText = await extractTextFromPDF(resumeFile as File);
+        } else {
+          fileText = await resumeFile.text();
+        }
+      }
+
+      if (!fileText || fileText.trim().length === 0) {
+        throw new Error('No text could be extracted from the resume. Please ensure your file contains readable text.');
+      }
+
+      console.log(`Analyzing resume with ${fileText.length} characters`);
 
       // analyze using server function
       const { score, feedback } = await apiClient.analyzeResume({ resumeText: fileText, jobDescription: jobRole?.description || '', jobTitle: jobRole?.title || '' });
@@ -111,7 +138,7 @@ const Interview = () => {
       console.error('Error analyzing resume:', error);
       setAnalysisError(error.message || 'Analysis failed');
       setStep('error');
-      toast({ title: 'Error', description: 'Analysis failed, but you can still continue to the interview' });
+      toast({ title: 'Error', description: error.message || 'Analysis failed, but you can still continue to the interview' });
     }
   };
 
@@ -219,7 +246,7 @@ const Interview = () => {
                 <Button
                   onClick={async () => {
                     try {
-                      const { session } = await apiClient.createSession(jobRoleId as string);
+                      const { session } = await apiClient.createSession(isCustom ? undefined : (jobRoleId as string), isCustom ? (jobRoleId as string) : undefined);
                       setSessionId(session.id);
                       navigate(`/voice-interview/${session.id}`);
                     } catch (error) {

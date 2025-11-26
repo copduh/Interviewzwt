@@ -41,7 +41,10 @@ const App = () => {
       check();
     };
     window.addEventListener('auth-change', handleAuthChange);
-    return () => { mounted = false; };
+    return () => { 
+      mounted = false;
+      window.removeEventListener('auth-change', handleAuthChange);
+    };
   }, []);
 
   if (loading) {

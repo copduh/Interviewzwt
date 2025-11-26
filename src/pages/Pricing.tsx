@@ -1,4 +1,5 @@
 import { useNavigate } from "react-router-dom";
+import apiClient from "@/integrations/api/client";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -57,11 +58,20 @@ const Pricing = () => {
     },
   ];
 
-  const handlePurchase = (planName: string) => {
-    toast({
-      title: "Coming soon!",
-      description: `${planName} plan purchase will be available soon. This is a demo version.`,
-    });
+  const handlePurchase = async (planName: string, price: number, credits: number) => {
+    try {
+      const { orderID, approveUrl } = await apiClient.createPayPalOrder(price, credits, planName);
+
+      if (approveUrl) {
+        // redirect the user to PayPal approval URL
+        window.location.href = approveUrl;
+      } else {
+        toast({ title: 'Error', description: 'Could not initiate PayPal checkout', variant: 'destructive' });
+      }
+    } catch (error: any) {
+      console.error('Payment error:', error);
+      toast({ title: 'Payment Error', description: error.message || 'Could not start checkout', variant: 'destructive' });
+    }
   };
 
   return (
@@ -134,7 +144,7 @@ const Pricing = () => {
                     ))}
                   </ul>
                   <Button
-                    onClick={() => handlePurchase(plan.name)}
+                    onClick={() => handlePurchase(plan.name, plan.price, plan.credits)}
                     className={`w-full ${
                       plan.popular
                         ? "bg-gradient-primary hover:opacity-90"

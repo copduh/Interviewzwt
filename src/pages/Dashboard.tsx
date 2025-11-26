@@ -60,6 +60,7 @@ const Dashboard = () => {
 
   const handleLogout = async () => {
     setToken(null);
+    window.dispatchEvent(new Event('auth-change'));
     navigate('/auth');
   };
 

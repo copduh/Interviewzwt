@@ -10,6 +10,7 @@ import profileRoutes from './routes/profile';
 import functionsRoutes from './routes/functions';
 import uploadRoutes from './routes/upload';
 import customJobRoutes from './routes/customJobs';
+import paymentsRoutes from './routes/payments';
 
 dotenv.config();
 
@@ -33,6 +34,7 @@ app.use('/api/functions', functionsRoutes);
 app.use('/api/upload', uploadRoutes);
 app.use('/api/custom-job', customJobRoutes);
 app.use('/api/profile', profileRoutes);
+app.use('/api/payments', paymentsRoutes);
 
 app.get('/', (req, res) => {
   res.json({ message: 'InterviewPrep API (MERN) is running' });

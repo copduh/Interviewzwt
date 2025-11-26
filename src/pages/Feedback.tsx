@@ -9,11 +9,17 @@ import { useToast } from "@/hooks/use-toast";
 import { Loader2, Trophy, TrendingUp, Home, FileText } from "lucide-react";
 
 interface InterviewSession {
-  resume_score: number;
-  resume_feedback: string;
-  interview_score: number;
-  interview_feedback: string;
-  job_roles: {
+  resumeScore?: number;
+  resume_score?: number;
+  resumeFeedback?: string;
+  resume_feedback?: string;
+  interviewScore?: number;
+  interview_score?: number;
+  interviewFeedback?: string;
+  interview_feedback?: string;
+  jobRoleId?: any;
+  customJobId?: any;
+  job_roles?: {
     title: string;
   };
 }
@@ -70,7 +76,15 @@ const Feedback = () => {
     );
   }
 
-  const overallScore = Math.round((session.resume_score + session.interview_score) / 2);
+  const resumeScore = session.resumeScore ?? session.resume_score ?? 0;
+  const resumeFeedback = session.resumeFeedback ?? session.resume_feedback ?? '';
+  const interviewScore = session.interviewScore ?? session.interview_score ?? 0;
+  const interviewFeedback = session.interviewFeedback ?? session.interview_feedback ?? '';
+  
+  // Get job title from populated jobRoleId or customJobId
+  const jobTitle = session.jobRoleId?.title || session.customJobId?.title || session.job_roles?.title || 'Interview';
+  
+  const overallScore = Math.round((resumeScore + interviewScore) / 2);
   const getScoreColor = (score: number) => {
     if (score >= 80) return "text-accent";
     if (score >= 60) return "text-primary";
@@ -102,7 +116,7 @@ const Feedback = () => {
               <div>
                 <CardTitle className="text-2xl">Interview Complete!</CardTitle>
                 <CardDescription className="text-primary-foreground/80">
-                  {session.job_roles.title}
+                  {jobTitle}
                 </CardDescription>
               </div>
             </div>
@@ -136,15 +150,15 @@ const Feedback = () => {
               <div>
                 <div className="flex items-center justify-between mb-2">
                   <span className="text-sm font-medium">Match Score</span>
-                  <span className={`text-2xl font-bold ${getScoreColor(session.resume_score)}`}>
-                    {session.resume_score}%
+                  <span className={`text-2xl font-bold ${getScoreColor(resumeScore)}`}>
+                    {resumeScore}%
                   </span>
                 </div>
-                <Progress value={session.resume_score} className="h-2" />
+                <Progress value={resumeScore} className="h-2" />
               </div>
               <div>
                 <h4 className="font-semibold mb-2 text-sm">Feedback</h4>
-                <p className="text-sm text-muted-foreground">{session.resume_feedback}</p>
+                <p className="text-sm text-muted-foreground">{resumeFeedback}</p>
               </div>
             </CardContent>
           </Card>
@@ -160,15 +174,15 @@ const Feedback = () => {
               <div>
                 <div className="flex items-center justify-between mb-2">
                   <span className="text-sm font-medium">Interview Score</span>
-                  <span className={`text-2xl font-bold ${getScoreColor(session.interview_score)}`}>
-                    {session.interview_score}%
+                  <span className={`text-2xl font-bold ${getScoreColor(interviewScore)}`}>
+                    {interviewScore}%
                   </span>
                 </div>
-                <Progress value={session.interview_score} className="h-2" />
+                <Progress value={interviewScore} className="h-2" />
               </div>
               <div>
                 <h4 className="font-semibold mb-2 text-sm">Feedback</h4>
-                <p className="text-sm text-muted-foreground">{session.interview_feedback}</p>
+                <p className="text-sm text-muted-foreground">{interviewFeedback}</p>
               </div>
             </CardContent>
           </Card>

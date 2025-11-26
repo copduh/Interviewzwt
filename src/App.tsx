@@ -15,6 +15,7 @@ import VoiceInterview from "./pages/VoiceInterview";
 import Feedback from "./pages/Feedback";
 import CustomJob from "./pages/CustomJob";
 import Pricing from "./pages/Pricing";
+import PaymentsReturn from "./pages/PaymentsReturn";
 import NotFound from "./pages/NotFound";
 
 const queryClient = new QueryClient();
@@ -71,6 +72,7 @@ const App = () => {
             <Route path="/feedback/:sessionId" element={user ? <Feedback /> : <Navigate to="/auth" />} />
             <Route path="/custom-job" element={user ? <CustomJob /> : <Navigate to="/auth" />} />
             <Route path="/pricing" element={user ? <Pricing /> : <Navigate to="/auth" />} />
+            <Route path="/payments/return" element={user ? <PaymentsReturn /> : <Navigate to="/auth" />} />
             <Route path="*" element={<NotFound />} />
           </Routes>
         </BrowserRouter>
